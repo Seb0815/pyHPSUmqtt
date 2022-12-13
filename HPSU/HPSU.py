@@ -14,6 +14,7 @@ import csv
 import json
 import os.path
 import time
+import logging
 
 class HPSU(object):
     commands = []
@@ -41,16 +42,17 @@ class HPSU(object):
         if not self.listCommands: #if we don't get a dict with commands
 
             # get language, if non given, take it from the system
-            LANG_CODE = lg_code.upper()[0:2] if lg_code else locale.getdefaultlocale()[0].split('_')[0].upper()
+            LANG_CODE = lg_code[0:2] if lg_code else locale.getdefaultlocale()[0].split('_')[0].upper()
             hpsuDict = {}
             
             # read the translation file. if it doesn't exist, take the english one
-            commands_hpsu = '%s/commands_hpsu_%s.csv' % (self.pathCOMMANDS, LANG_CODE)
-            if not os.path.isfile(commands_hpsu):
-                commands_hpsu = '%s/commands_hpsu_%s.csv' % (self.pathCOMMANDS, "EN")
+            command_translations_hpsu = '%s/commands_hpsu_%s.csv' % (self.pathCOMMANDS, LANG_CODE)
+            if not os.path.isfile(command_translations_hpsu):
+                command_translations_hpsu = '%s/commands_hpsu_%s.csv' % (self.pathCOMMANDS, "EN")
+            self.logger.info("HPSU %s, loading command traslations file: %s" % (cmd, command_translations_hpsu))
             # check, if commands are json or csv
             # read all known commands
-            with open(commands_hpsu, 'rU',encoding='utf-8') as csvfile:
+            with open(command_translations_hpsu, 'rU',encoding='utf-8') as csvfile:
                 pyHPSUCSV = csv.reader(csvfile, delimiter=';', quotechar='"')
                 next(pyHPSUCSV, None) # skip the header
                 for row in pyHPSUCSV:
@@ -60,8 +62,9 @@ class HPSU(object):
                     hpsuDict.update({name:{"label":label, "desc":desc}})
 
             # read all known commands
-
-            with open('%s/commands_hpsu.json' % self.pathCOMMANDS, 'rU',encoding='utf-8') as jsonfile:
+            command_details_hpsu = '%s/commands_hpsu.json' % self.pathCOMMANDS
+            self.logger.info("HPSU %s, loading command details file: %s" % (cmd, command_details_hpsu))
+            with open(command_details_hpsu, 'rU',encoding='utf-8') as jsonfile:
                 self.all_commands = json.load(jsonfile)
                 self.command_dict=self.all_commands["commands"]
                 for single_command in self.command_dict:
@@ -82,24 +85,10 @@ class HPSU(object):
         elif self.driver == "HPSUD":
             self.can = CanTCP(self)
         else:
-            print("Error selecting driver %s" % self.driver)
+            logger.error("Error selecting driver %s" % self.driver)
             sys.exit(9)
 
         self.initInterface(port)
-
-    def printd(self, level, msg):        
-        if self.logger:
-            if level == 'warning':
-                self.logger.warning(msg)
-            elif level == 'error':
-                self.logger.error(msg)
-            elif level == 'info':
-                self.logger.info(msg)
-            elif level == 'exception':
-                self.logger.exception(msg)
-        else:
-            if self.driver != "HPSUD":
-                print("%s - %s" % (level, msg))
     
     def sendCommandWithParse(self, cmd, setValue=None, priority=1):
         response = None
@@ -231,6 +220,9 @@ class HPSU(object):
             resp = str(response["resp"])
         else:
             resp = str(response["resp"])
+        # TODO replaces resp with the decoded value, major breaking change to be discussed
+        #      meanwhile, a 'desc' field is added to the output json
         #if cmd["value_code"]:
         #    resp=cmd["value_code"][resp]
         return resp
+        
