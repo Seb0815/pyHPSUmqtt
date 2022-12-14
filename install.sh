@@ -4,7 +4,7 @@ SHARE_DIR="/usr/share/pyHPSU/"
 CONF_DIR="/etc/pyHPSU"
 BIN_DIR="/usr/bin/"
 PACKAGE_DIR="/usr/share/doc/packages/pyHPSU"
-DIST_DIR="/usr/lib/python3/dist-packages/HPSU"
+DIST_DIR="/usr/lib/python3.10/dist-packages/HPSU"
 echo "Installing pyHPSU"
 if [ ! -d $CONF_DIR ]; then
         echo "Creating directory for config files"
@@ -49,4 +49,4 @@ cp pyHPSUd.py $BIN_DIR
 chmod a+x $BIN_DIR/pyHPSU.py
 chmod a+x $BIN_DIR/pyHPSUd.py
 
-echo "Installation done!!!"
+echo "pyHPSU Installation done"
