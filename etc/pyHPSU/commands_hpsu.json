@@ -740,10 +740,10 @@
 			"name" : "power_dhw", 
 			"command" : "31 00 FA 06 68 00 00", 
 			"id" : "190", 
-			"divisor" : "0.1", 
+			"divisor" : "100", 
 			"writable" : "true", 
-			"unit" : "w",
-			"type" : "longint"
+			"unit" : "kw",
+			"type" : "float"
 		},
 		"buh_s1_pow" : { 
 			"name" : "buh_s1_pow", 
