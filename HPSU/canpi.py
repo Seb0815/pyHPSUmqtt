@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 # v 0.0.3 by Vanni Brutto (Zanac)
 
+import os
 import sys
 import getopt
 import time
@@ -33,19 +34,18 @@ class CanPI(object):
 
 
     def get_with_default(self, config, section, name, default):
-        if "config" not in config.sections():
+        if section not in config.sections():
             return default
-        if config.has_option(section,name):
-            return config.get(section,name)
+        if config.has_option(section, name):
+            return config.get(section, name)
         else:
             return default
 
     def __del__(self):
-        pass
-        """try:
+        try:
             self.bus.shutdown()
         except Exception:
-            self.hpsu.logger.exception('Error shutdown canbus')"""
+            pass
 
     def sendCommandWithID(self, cmd, setValue=None, priority=1):
         if setValue:

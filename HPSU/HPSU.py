@@ -42,7 +42,7 @@ class HPSU(object):
         if not self.listCommands: #if we don't get a dict with commands
 
             # get language, if non given, take it from the system
-            LANG_CODE = lg_code[0:2] if lg_code else locale.getdefaultlocale()[0].split('_')[0].upper()
+            LANG_CODE = lg_code[0:2] if lg_code else (locale.getlocale()[0] or "EN").split('_')[0].upper()
             hpsuDict = {}
             
             # read the translation file. if it doesn't exist, take the english one
@@ -205,7 +205,6 @@ class HPSU(object):
         resp = response["resp"]
 
         if cmd["unit"] == HPSU.UM_DEGREE:
-            resp = locale.format("%.2f", round(response["resp"], 2))
             resp = "{:.2f}".format(round(response["resp"],2))
             if verbose == "2":
                 resp = "%s c" % resp

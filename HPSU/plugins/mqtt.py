@@ -71,16 +71,16 @@ class export():
 
         self.logger.info("connecting to broker: " + self.brokerhost + ", port: " + str(self.brokerport))
         self.client.connect(self.brokerhost, port=self.brokerport)
+        self.client.loop_start()
 
-        #self.msgs=[]
         for r in vars:
-            msgs=[]
             if self.prefix:
-                ret=self.client.publish(self.prefix + "/" + r['name'],payload=r['resp'], qos=int(self.qos))
-                topic=self.prefix + "/" + r['name']
+                topic = self.prefix + "/" + r['name']
             else:
-                ret=self.client.publish(r['name'],payload=r['resp'], qos=int(self.qos))
-                topic=r['name']
-            msg={'topic':topic,'payload':r['resp'], 'qos':self.qos, 'retain':False}
+                topic = r['name']
+            ret = self.client.publish(topic, payload=r['resp'], qos=int(self.qos), retain=self.retain)
+            ret.wait_for_publish()
+            self.logger.debug("published to " + topic)
 
+        self.client.loop_stop()
         self.client.disconnect()

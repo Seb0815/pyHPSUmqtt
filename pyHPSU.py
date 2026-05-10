@@ -253,6 +253,9 @@ def main(argv):
         # and handle the data as configured
         #
     if options.mqtt_daemon:
+        # create HPSU once with all commands for MQTT daemon mode
+        if n_hpsu is None:
+            n_hpsu = HPSU(driver=options.driver, logger=logger, port=options.port, cmd=[], lg_code=options.lg_code)
         # adding the PID at the end of the client name ensures every process have a different client name
         _mqttdaemon_clientname = mqtt_clientname + "-mqttdaemon-" + str(os.getpid())
         logger.info("creating new mqtt client instance: " + _mqttdaemon_clientname)
@@ -263,6 +266,9 @@ def main(argv):
             mqtt_client.enable_logger()
 
         mqtt_client.on_message=on_mqtt_message
+        mqtt_client.on_connect=on_connect
+        mqtt_client.on_disconnect=on_disconnect
+        mqtt_client.reconnect_delay_set(min_delay=1, max_delay=30)
         logger.info("connecting to broker: " + mqtt_brokerhost + ", port: " + str(mqtt_brokerport))
         mqtt_client.connect(mqtt_brokerhost, mqtt_brokerport)
 
@@ -274,6 +280,16 @@ def main(argv):
         #mqtt_client.loop_forever()
         if options.auto:
             mqtt_client.loop_start()
+
+    # collect all commands from JOBS config for HPSU initialization (auto mode)
+    if options.auto:
+        all_job_cmds = []
+        for period_string in timed_jobs.keys():
+            for job in timed_jobs[period_string]:
+                if job not in all_job_cmds:
+                    all_job_cmds.append(str(job))
+        # create HPSU once with all commands
+        n_hpsu = HPSU(driver=options.driver, logger=logger, port=options.port, cmd=all_job_cmds, lg_code=options.lg_code)
 
     # if a backup file is specified we are in backup mode
     if options.backup_file is not None:
@@ -289,15 +305,14 @@ def main(argv):
                     for job in timed_jobs[period_string]:
                         collected_cmds.append(str(job))
             if len(collected_cmds):
-                n_hpsu = HPSU(driver=options.driver, logger=logger, port=options.port, cmd=collected_cmds, lg_code=options.lg_code)
-                exec('thread_%s = threading.Thread(target=read_can, args=(collected_cmds,options.verbose,options.output_type))' % (period))
-                exec('thread_%s.start()' % (period))
+                t = threading.Thread(target=read_can, args=(collected_cmds, options.verbose, options.output_type))
+                t.start()
             time.sleep(1)
     # if a restore file is specified we are in restore mode
     elif options.restore_file is not None:
         restore_commands=[]
         try:
-            with open(options.restore_file, 'rU') as jsonfile:
+            with open(options.restore_file, 'r') as jsonfile:
                 restore_settings=json.load(jsonfile)
                 for command in restore_settings:
                     restore_commands.append(str(command["name"]) + ":" + str(command["resp"]))
@@ -408,10 +423,21 @@ def read_can(cmd, verbose, output_type):
             hpsu_plugin = module.export(hpsu=n_hpsu, logger=logger, config_file=options.conf_file)
             hpsu_plugin.pushValues(vars=arrResponse)
 
+def on_connect(client, userdata, flags, rc):
+    if rc == 0:
+        logger.info("mqtt connected successfully")
+        command_topic = mqtt_prefix + "/" + mqttdaemon_command_topic + "/+"
+        logger.info("(Re-)subscribing to command topic: " + command_topic)
+        client.subscribe(command_topic)
+    else:
+        logger.error("mqtt connection failed with result code " + str(rc))
+
 def on_disconnect(client, userdata, rc=0):
-    logger.debug("mqtt disConnected: result code " + str(rc))
-    client.loop_stop()
-    
+    if rc != 0:
+        logger.warning("mqtt unexpected disconnection (rc: " + str(rc) + "), will auto-reconnect")
+    else:
+        logger.info("mqtt disconnected cleanly")
+
 def on_mqtt_message(client, userdata, message):
     global options
     global logger
@@ -427,9 +453,16 @@ def on_mqtt_message(client, userdata, message):
     else:
         hpsu_command_string = mqtt_command + ":" + mqtt_value
     hpsu_command_list = [hpsu_command_string]
-    logger.info("setup HPSU to accept commands")
-    n_hpsu = HPSU(driver=options.driver, logger=logger, port=options.port, cmd=hpsu_command_list, lg_code=options.lg_code)
     logger.info("send command to hpsu: " + hpsu_command_string)
+    # ensure the requested command is in n_hpsu.commands
+    cmd_found = any(c["name"] == mqtt_command for c in n_hpsu.commands)
+    if not cmd_found:
+        # add command from the full command dictionary
+        if mqtt_command in n_hpsu.command_dict:
+            n_hpsu.commands.append(n_hpsu.command_dict[mqtt_command])
+        else:
+            logger.error("Unknown command: " + mqtt_command)
+            return
     #exec('thread_mqttdaemon = threading.Thread(target=read_can(hpsu_command_list, options.verbose, ["MQTTDAEMON"]))')
     #exec('thread_mqttdaemon.start()')
     read_can(hpsu_command_list, options.verbose, ["MQTTDAEMON"])
@@ -453,4 +486,4 @@ if __name__ == "__main__":
         traceback.print_exc()
         #print("Exception: {}".format(type(e).__name__))
         #print("Exception message: {}".format(e))
-        sys.exit(os.SOFTWARE)
+        sys.exit(os.EX_SOFTWARE)

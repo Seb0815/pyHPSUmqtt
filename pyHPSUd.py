@@ -117,7 +117,7 @@ def _exit():
         read_thread.exit()
         socket_server_thread.exit()
         sys.exit()
-    except (Exception, e3):
+    except Exception as e3:
         exit()
     
 if __name__ == '__main__':
