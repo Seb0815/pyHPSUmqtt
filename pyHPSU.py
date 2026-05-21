@@ -349,8 +349,18 @@ def read_can(cmd, verbose, output_type):
 
     arrResponse = []
 
+    # Extract requested command names (strip ":value" for write commands)
+    requested_cmd_names = set()
+    for i in cmd:
+        if ":" in i:
+            requested_cmd_names.add(i.split(":")[0])
+        else:
+            requested_cmd_names.add(i)
+
     with can_lock:
         for c in n_hpsu.commands:
+            if c["name"] not in requested_cmd_names:
+                continue
             setValue = None
             for i in cmd:
                 if ":" in i and c["name"] == i.split(":")[0]:

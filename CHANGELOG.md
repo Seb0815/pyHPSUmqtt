@@ -19,7 +19,21 @@
 ### Betroffene Dateien
 - `pyHPSU.py`
 
-## 2026-05-10
+## 2026-05-21a
+
+### Bugfixes
+
+#### CAN-Bus Empfangspuffer voll mit alten Nachrichten → "msg not sync" Timeout (canpi.py)
+- Die HPSU sendet ständig interne Status-Nachrichten auf dem CAN-Bus. Diese sammelten sich im Empfangspuffer an. Beim Senden eines Kommandos wurden dann erst die alten Nachrichten abgearbeitet statt der eigentlichen Antwort — nach 15 Versuchen war die richtige Antwort oft nicht dabei → Timeout.
+- Fix: Vor jedem `bus.send()` wird der Empfangspuffer mit `bus.recv(timeout=0)` komplett geleert. So kommen nach dem Senden nur noch frische Nachrichten an.
+
+#### read_can() fragt alle Kommandos ab statt nur die angeforderten (pyHPSU.py)
+- Regression vom vorherigen Refactoring: Da `n_hpsu` jetzt global mit allen Job-Kommandos erstellt wird, iterierte `read_can()` über **alle** Kommandos statt nur über die im `cmd`-Parameter angeforderten. Dadurch wurde bei jedem Timer-Tick jedes Kommando abgefragt, unabhängig von der konfigurierten Periode.
+- Fix: `read_can()` filtert jetzt auf die angeforderten Kommandonamen und überspringt den Rest.
+
+### Betroffene Dateien
+- `HPSU/canpi.py`
+- `pyHPSU.py`
 
 ### Bugfixes
 

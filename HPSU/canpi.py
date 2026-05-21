@@ -83,6 +83,14 @@ class CanPI(object):
         notTimeout = True
         i = 0
         #print("sent: " + str(command))
+
+        # Flush receive buffer to discard stale messages from HPSU internal traffic
+        flushed = 0
+        while self.bus.recv(timeout=0) is not None:
+            flushed += 1
+        if flushed:
+            self.hpsu.logger.debug("CanPI %s, flushed %d stale messages from buffer" % (cmd['name'], flushed))
+
         try:
             msg = can.Message(arbitration_id=receiver_id, data=msg_data, is_extended_id=False, dlc=7)
             self.bus.send(msg)
