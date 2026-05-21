@@ -41,6 +41,7 @@ n_hpsu = None
 options = None
 mqtt_client = None
 mqtt_prefix = None
+can_lock = threading.Lock()
 mqtt_qos = 0
 mqtt_retain = False
 mqtt_addtimestamp = False
@@ -270,7 +271,14 @@ def main(argv):
         mqtt_client.on_disconnect=on_disconnect
         mqtt_client.reconnect_delay_set(min_delay=1, max_delay=30)
         logger.info("connecting to broker: " + mqtt_brokerhost + ", port: " + str(mqtt_brokerport))
-        mqtt_client.connect(mqtt_brokerhost, mqtt_brokerport)
+        mqtt_connected = False
+        while not mqtt_connected:
+            try:
+                mqtt_client.connect(mqtt_brokerhost, mqtt_brokerport)
+                mqtt_connected = True
+            except (ConnectionRefusedError, OSError) as e:
+                logger.warning("MQTT broker not available (%s), retrying in 5s..." % str(e))
+                time.sleep(5)
 
         command_topic = mqtt_prefix + "/" + mqttdaemon_command_topic + "/+"
         logger.info("Subscribing to command topic: " + command_topic)
@@ -341,7 +349,8 @@ def read_can(cmd, verbose, output_type):
 
     arrResponse = []
 
-    for c in n_hpsu.commands:
+    with can_lock:
+        for c in n_hpsu.commands:
             setValue = None
             for i in cmd:
                 if ":" in i and c["name"] == i.split(":")[0]:
@@ -386,42 +395,45 @@ def read_can(cmd, verbose, output_type):
                         logger.error('command %s failed' % (c["name"]))
 
     for output_type_name in output_type: 
-        if output_type_name == "JSON":
-            if len(arrResponse)!=0:
-                print(arrResponse)
-        elif output_type_name == "CSV":
-            for r in arrResponse:
-                print("%s,%s,%s" % (r["timestamp"], r["name"], r["resp"]))
-        elif output_type_name == "BACKUP":
-            error_message = "Writing Backup to " + str(options.backup_file)
-            print(error_message)
-            logger.info(error_message)
-            
-            try:
-                with open(options.backup_file, 'w') as outfile:
-                    json.dump(arrResponse, outfile, sort_keys = True, indent = 4, ensure_ascii = False)
-            except FileNotFoundError:
-                error_message = "No such file or directory!!!"
+        try:
+            if output_type_name == "JSON":
+                if len(arrResponse)!=0:
+                    print(arrResponse)
+            elif output_type_name == "CSV":
+                for r in arrResponse:
+                    print("%s,%s,%s" % (r["timestamp"], r["name"], r["resp"]))
+            elif output_type_name == "BACKUP":
+                error_message = "Writing Backup to " + str(options.backup_file)
                 print(error_message)
-                logger.error(error_message)
-                sys.exit(os.EX_NOINPUT)
-        elif output_type_name == "MQTTDAEMON":
-            for r in arrResponse:
-                if mqtt_addtimestamp:
-                    # use the same format as JSON output
-                    # with timestamp included, retain=true become more interesting
-                    if "desc" in r:
-                        mqtt_client.publish(mqtt_prefix + "/" + r["name"], "{'name': '%s', 'resp': '%s', 'timestamp': %s, 'desc': '%s'}" % (r["name"], r["resp"], r["timestamp"], r["desc"]), qos=mqtt_qos, retain=mqtt_retain)
+                logger.info(error_message)
+                
+                try:
+                    with open(options.backup_file, 'w') as outfile:
+                        json.dump(arrResponse, outfile, sort_keys = True, indent = 4, ensure_ascii = False)
+                except FileNotFoundError:
+                    error_message = "No such file or directory!!!"
+                    print(error_message)
+                    logger.error(error_message)
+                    sys.exit(os.EX_NOINPUT)
+            elif output_type_name == "MQTTDAEMON":
+                for r in arrResponse:
+                    if mqtt_addtimestamp:
+                        # use the same format as JSON output
+                        # with timestamp included, retain=true become more interesting
+                        if "desc" in r:
+                            mqtt_client.publish(mqtt_prefix + "/" + r["name"], "{'name': '%s', 'resp': '%s', 'timestamp': %s, 'desc': '%s'}" % (r["name"], r["resp"], r["timestamp"], r["desc"]), qos=mqtt_qos, retain=mqtt_retain)
+                        else:
+                            mqtt_client.publish(mqtt_prefix + "/" + r["name"], "{'name': '%s', 'resp': '%s', 'timestamp': %s}" % (r["name"], r["resp"], r["timestamp"]), qos=mqtt_qos, retain=mqtt_retain)
                     else:
-                        mqtt_client.publish(mqtt_prefix + "/" + r["name"], "{'name': '%s', 'resp': '%s', 'timestamp': %s}" % (r["name"], r["resp"], r["timestamp"]), qos=mqtt_qos, retain=mqtt_retain)
-                else:
-                    mqtt_client.publish(mqtt_prefix + "/" + r["name"], r["resp"], qos=mqtt_qos, retain=mqtt_retain)
+                        mqtt_client.publish(mqtt_prefix + "/" + r["name"], r["resp"], qos=mqtt_qos, retain=mqtt_retain)
 
-        else:
-            module_name=output_type_name.lower()
-            module = importlib.import_module("HPSU.plugins." + module_name)
-            hpsu_plugin = module.export(hpsu=n_hpsu, logger=logger, config_file=options.conf_file)
-            hpsu_plugin.pushValues(vars=arrResponse)
+            else:
+                module_name=output_type_name.lower()
+                module = importlib.import_module("HPSU.plugins." + module_name)
+                hpsu_plugin = module.export(hpsu=n_hpsu, logger=logger, config_file=options.conf_file)
+                hpsu_plugin.pushValues(vars=arrResponse)
+        except Exception as e:
+            logger.error('output plugin %s failed: %s' % (output_type_name, str(e)))
 
 def on_connect(client, userdata, flags, rc):
     if rc == 0:

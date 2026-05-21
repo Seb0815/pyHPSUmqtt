@@ -1,5 +1,24 @@
 # Changelog
 
+## 2026-05-21
+
+### Bugfixes
+
+#### CAN-Bus Thread-Unsicherheit → "msg not sync" Kaskade (pyHPSU.py)
+- Im Auto-Modus konnten mehrere Threads gleichzeitig auf den CAN-Bus zugreifen (z.B. wenn ein Timer feuert während der vorherige Thread noch läuft, oder ein MQTT-Daemon-Befehl zeitgleich eingeht). Dadurch wurden CAN-Antworten vertauscht → endlose "msg not sync" Retries → Timeout aller Kommandos.
+- Fix: Globaler `threading.Lock()` (`can_lock`) um alle CAN-Bus-Operationen in `read_can()`. Nur noch ein Thread kann gleichzeitig CAN-Kommandos senden/empfangen.
+
+#### MQTT-Broker-Ausfall crasht Auto-Mode Threads (pyHPSU.py)
+- Wenn der MQTT-Broker kurzzeitig nicht erreichbar war, warf das MQTT-Plugin (oder ein anderes Output-Plugin) eine unbehandelte `ConnectionRefusedError`. Da `read_can()` in einem Thread läuft, starb der Thread still — CAN-Werte wurden nicht mehr abgefragt.
+- Fix: Alle Output-Plugin-Aufrufe in `read_can()` sind jetzt in `try/except` gewrappt. Fehler werden geloggt, aber der Thread überlebt.
+
+#### Initialer MQTT-Connect blockiert bei Broker-Ausfall (pyHPSU.py)
+- `mqtt_client.connect()` beim Start warf eine Exception wenn der Broker nicht erreichbar war → Service-Start schlug fehl.
+- Fix: Retry-Loop mit 5s Wartezeit bis der Broker verfügbar ist.
+
+### Betroffene Dateien
+- `pyHPSU.py`
+
 ## 2026-05-10
 
 ### Bugfixes
